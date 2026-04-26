@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from passlib.context import CryptContext
@@ -14,12 +15,15 @@ class UserCreate(BaseModel):
     login: str
     password: str
 
+
 class UserCheck(BaseModel):
     login: str
     password: str
 
+
 class UserResponse(BaseModel):
     id: str
+
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
@@ -31,9 +35,16 @@ async def register(payload: UserCreate, db: AsyncSession = Depends(get_db)):
         hashed_password=pwd_context.hash(payload.password)
     )
     db.add(user)
-    await db.commit()
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Login already taken")
+
     await db.refresh(user)
     return {"id": str(user.id), "login": user.login}
+
 
 @router.post("/check")
 async def check_user(payload: UserCheck, db: AsyncSession = Depends(get_db)):

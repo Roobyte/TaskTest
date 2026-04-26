@@ -1,5 +1,5 @@
 up:
-	docker compose up -d
+	docker compose up -d --build
 
 migrate:
 	docker compose run --rm user-service alembic upgrade head
