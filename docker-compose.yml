@@ -1,0 +1,72 @@
+services:
+  user-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=${POSTGRES_PASSWORD} psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT 1'"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+    ports:
+      - "5435:5432"
+
+  user-service:
+    build: ./user_service
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@user-db:5432/${POSTGRES_DB}
+    depends_on:
+      user-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+    ports:
+      - "8000:8000"
+
+  auth-redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+
+  auth-service:
+    build: ./auth_service
+    environment:
+      AUTH_SECRET_KEY: ${AUTH_SECRET_KEY}
+      USER_SERVICE_URL: http://user-service:8000
+      REDIS_HOST: auth-redis
+      REDIS_PORT: 6379
+    depends_on:
+      auth-redis:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    networks:
+      - app-net
+    ports:
+      - "8001:8001"
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  app-net:
+    driver: bridge
